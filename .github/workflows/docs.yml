@@ -1,0 +1,56 @@
+name: Deploy DocC to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build DocC archive
+        run: |
+          xcodebuild docbuild \
+            -scheme SwiftGatoHistoryKit \
+            -derivedDataPath /tmp/docbuild \
+            -destination 'generic/platform=macOS'
+
+      - name: Transform for static hosting
+        run: |
+          $(xcrun --find docc) process-archive transform-for-static-hosting \
+            /tmp/docbuild/Build/Products/Debug/SwiftGatoHistoryKit.doccarchive \
+            --output-path ./docs \
+            --hosting-base-path SwiftGatoHistoryKit
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
