@@ -1,9 +1,33 @@
-.DS_Store
-/.build
-/Packages
-xcuserdata/
+# Xcode build products and derived data
+build/
 DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
-/docs
+.build/
+.deriveddata/
+
+# Xcode per-user settings
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+
+# macOS and editor files
+.DS_Store
+**/.DS_Store
+.vscode/
+
+# Swift generated files
+*.swiftdoc
+*.swiftmodule
+*.swiftsourceinfo
+
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# VSCode 
+.vscode
+
+**/*.doccarchive/
+*.doccarchive/
