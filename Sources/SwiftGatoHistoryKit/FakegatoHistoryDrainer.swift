@@ -3,26 +3,23 @@ import os
 
 public enum FakegatoHistoryDrainer {
 
-    /// Outcome of `drainEntries(status:accessoryName:maxIterations:logger:readNext:onProgress:)`:
-    /// every entry decoded before the drain stopped, the highest
-    /// ring-buffer address seen across every batch read (for the next
-    /// resume cursor), and why the drain stopped.
+    /// Outcome of `drainEntries`: the decoded entries, the highest
+    /// ring-buffer address seen (for the next resume cursor), and why the
+    /// drain stopped.
     public struct DrainResult: Equatable, Sendable {
         /// Every entry successfully decoded before the drain stopped.
         public let entries: [HistoryEntry]
-        /// The highest entry address seen across every batch read —
-        /// including a batch that decoded to zero `HistoryEntry` values,
-        /// see `DrainStopReason.noDecodableEntries` — or `nil` if no batch
-        /// ever produced one. Intended to be persisted as the next fetch's
-        /// resume cursor.
+        /// The highest entry address seen across every batch read, even a
+        /// batch that decoded to zero entries (see
+        /// `DrainStopReason.noDecodableEntries`). `nil` if no batch ever
+        /// produced one. Persist this as the next fetch's resume cursor.
         public let lastAddress: UInt32?
         /// Why the drain loop stopped.
         public let stopReason: DrainStopReason
     }
 
-    /// The distinct ways `drainEntries` can stop reading. A sibling of
-    /// `DrainResult` (rather than nested inside it) to keep type nesting to
-    /// one level.
+    /// The ways `drainEntries` can stop reading. A sibling of `DrainResult`
+    /// rather than nested inside it, to keep type nesting to one level.
     public enum DrainStopReason: Equatable, Sendable {
         /// `status.usedEntryCount` entries have now been collected.
         case countReached
@@ -32,16 +29,14 @@ public enum FakegatoHistoryDrainer {
         case readFailed
         /// `readNext()` returned `nil` or empty `Data`.
         case emptyRead
-        /// A read returned byte-for-byte identical data to the immediately
-        /// previous read — the accessory isn't advancing.
+        /// A read returned byte-for-byte identical data to the previous
+        /// one — the accessory isn't advancing.
         case identicalBytes
-        /// A read batch had zero parseable records at all (`recordCount
-        /// == 0` — the accessory sent no records this read, not even
-        /// unsupported ones). A batch with ≥1 record but zero decoded
-        /// `HistoryEntry` values (e.g. all-unsupported types) does *not*
-        /// hit this case — the drain keeps reading, since `lastAddress`
-        /// genuinely advanced and there may be decodable entries further
-        /// along.
+        /// A read batch had zero parseable records (`recordCount == 0`) —
+        /// genuine end-of-stream. A batch with records that all happen to
+        /// be unsupported types doesn't hit this case; `lastAddress` still
+        /// advanced, so the drain keeps reading in case decodable entries
+        /// follow.
         case noDecodableEntries
         /// The defensive `maxIterations` safety cap was hit.
         case iterationCap
@@ -49,25 +44,22 @@ public enum FakegatoHistoryDrainer {
 
     /// Repeatedly calls `readNext()` until `status.usedEntryCount` is
     /// reached, a read comes back with nothing new, or `maxIterations` is
-    /// hit. A pure function of its arguments (no HomeKit types) so the
+    /// hit. A pure function of its arguments (no HomeKit types), so the
     /// polling/decoding loop is testable against a scripted `readNext`
     /// without a live Home — see `FakegatoHistoryDrainerTests`. `readNext`
-    /// stands in for reading a characteristic's current value; the real
-    /// caller passes exactly that.
+    /// stands in for reading a characteristic's current value.
     ///
-    /// Also tracks the highest entry address seen across every batch
-    /// (regardless of `startingAtAddress`, since `status.usedEntryCount` is
-    /// the accessory's *total* retained count, not the count remaining from
-    /// a resumed address; the natural "count reached" stop condition above
-    /// effectively only fires on a full fetch; a resumed fetch stops via
-    /// "nothing new" or the identical-bytes guard instead, both handled
-    /// identically here), so the caller can persist it as the next resume
-    /// cursor. This advances even when an entire batch fails to decode into
-    /// any `HistoryEntry`; a record with an unsupported/malformed type
-    /// still occupies one address slot in the accessory's ring buffer, so
-    /// the cursor must advance past it too, matching
-    /// `FakegatoHistoryDecoder.parseEntries(_:referenceDate:)`'s own
-    /// `lastAddress` semantics.
+    /// Also tracks the highest entry address seen across every batch, so
+    /// the caller can persist it as the next resume cursor. This advances
+    /// even when a whole batch fails to decode into any `HistoryEntry`: an
+    /// unsupported or malformed record still occupies an address slot in
+    /// the accessory's ring buffer, so the cursor has to move past it too,
+    /// matching `FakegatoHistoryDecoder.parseEntries(_:referenceDate:)`'s
+    /// own `lastAddress` semantics. (`status.usedEntryCount` is the
+    /// accessory's total retained count, not what's left from a resumed
+    /// address, so "count reached" mainly fires on a full fetch; a resumed
+    /// fetch usually stops via "nothing new" or the identical-bytes guard
+    /// instead.)
     public static func drainEntries(
         status: FakegatoHistoryDecoder.HistoryStatus,
         accessoryName: String,
@@ -94,9 +86,8 @@ public enum FakegatoHistoryDrainer {
             do {
                 entriesData = try await readNext()
             } catch {
-                // Non-fatal: log and stop, returning whatever was
-                // successfully collected before this read failed, rather
-                // than discarding an otherwise-successful partial fetch.
+                // Non-fatal: stop and return whatever was already collected
+                // rather than discard a partial fetch.
                 logger?.error("fetchHistory: reading Entries characteristic on \"\(accessoryName, privacy: .public)\" failed on iteration \(iterations, privacy: .public): \(error, privacy: .public). Stopping with \(entries.count, privacy: .public) entries collected.")
                 breakReason = .readFailed
                 break
@@ -107,13 +98,10 @@ public enum FakegatoHistoryDrainer {
                 break
             }
 
-            // Defensive guard against an accessory that doesn't advance its
-            // internal read cursor between characteristic reads — the
-            // reverse-engineered protocol docs are explicitly unclear on
-            // whether every accessory does. Without this, an accessory
-            // that just keeps returning the same bytes would spin all the
-            // way to `maxIterations`, decoding (and appending) the same
-            // entries over and over.
+            // Guards against an accessory that doesn't advance its read
+            // cursor between reads (the protocol docs don't guarantee it
+            // does). Without this, repeated identical bytes would spin to
+            // `maxIterations`, re-decoding the same entries each time.
             if entriesData == previousEntriesData {
                 logger?.error("fetchHistory: iteration \(iterations, privacy: .public) on \"\(accessoryName, privacy: .public)\" returned identical bytes to the previous read — accessory isn't advancing. Stopping with \(entries.count, privacy: .public) entries collected.")
                 breakReason = .identicalBytes
@@ -123,11 +111,9 @@ public enum FakegatoHistoryDrainer {
 
             let batch = FakegatoHistoryDecoder.parseEntries(entriesData, referenceDate: referenceDate)
             lastAddress = batch.lastAddress ?? lastAddress
-            // `recordCount == 0` means this read truly had nothing
-            // parseable — genuine end-of-stream. A batch with records that
-            // all happened to be unsupported types still made progress
-            // (`lastAddress` advanced above), so keep reading rather than
-            // stopping on `batch.entries.isEmpty` alone.
+            // `recordCount == 0` is genuine end-of-stream. A batch of
+            // all-unsupported types still advanced `lastAddress`, so keep
+            // reading rather than stop on `batch.entries.isEmpty` alone.
             guard batch.recordCount > 0 else {
                 breakReason = .noDecodableEntries
                 break

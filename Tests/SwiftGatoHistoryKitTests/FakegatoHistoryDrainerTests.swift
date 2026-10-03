@@ -3,8 +3,8 @@ import Foundation
 @testable import SwiftGatoHistoryKit
 
 /// Scripted stand-in for reading a characteristic's current value, so
-/// `FakegatoHistoryDrainer.drainEntries`'s polling/decoding loop can be
-/// driven by a canned sequence of reads without a live HomeKit home.
+/// `FakegatoHistoryDrainer.drainEntries` can be driven by a canned sequence
+/// of reads without a live HomeKit home.
 private actor ScriptedEntriesReader {
     /// One scripted outcome for a single `readNext()` call.
     enum Step {
@@ -145,12 +145,9 @@ struct FakegatoHistoryDrainerTests {
     }
 
     @Test func drainEntriesContinuesPastAnAllUnsupportedTypeBatchInsteadOfStopping() async {
-        // Regression for the Eve Room-type ambiguity noted in
-        // `FakegatoHistoryDecoder`'s doc comment on `0x7F`: a batch made up
-        // entirely of unsupported-type records still advanced the
-        // accessory's ring buffer, so the drain must keep reading rather
-        // than mistaking "zero decoded entries this read" for
-        // end-of-stream — otherwise real, later entries never get fetched.
+        // A batch of entirely unsupported-type records still advances the
+        // ring buffer, so the drain must keep reading instead of mistaking
+        // "zero decoded entries" for end-of-stream.
         let status = FakegatoHistoryDecoder.HistoryStatus(referenceDate: Date(timeIntervalSinceReferenceDate: 0), usedEntryCount: 1, memorySize: 100, firstEntryAddress: 0)
         let doorEntryBytes = Data(FakegatoTestBytes.entryBytes(counter: 7, secondsSinceReference: 0, type: 0x01, payload: [1]))
         let payload = FakegatoTestBytes.roomPayload(temperatureCelsiusTimes100: 2000, humidityPercentTimes100: 5000, ppm: 500)
@@ -172,9 +169,8 @@ struct FakegatoHistoryDrainerTests {
 
     @Test func drainEntriesStopsWithNoDecodableEntriesOnlyWhenABatchHasNoRecordsAtAll() async {
         let status = FakegatoHistoryDecoder.HistoryStatus(referenceDate: Date(timeIntervalSinceReferenceDate: 0), usedEntryCount: 10, memorySize: 100, firstEntryAddress: 0)
-        // Declares a record length of 3, too short to even hold the
-        // 10-byte common header — `parseEntries` bails immediately with
-        // `recordCount == 0`, the genuine end-of-stream signal.
+        // Record length of 3 is too short for the 10-byte header, so
+        // `parseEntries` bails with `recordCount == 0` (end-of-stream).
         let unparseableBytes = Data([0x03, 0x01, 0x00])
         let reader = ScriptedEntriesReader([unparseableBytes])
 

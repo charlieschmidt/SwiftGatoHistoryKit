@@ -3,20 +3,18 @@ import Foundation
 @testable import SwiftGatoHistoryKit
 
 /// `isStale(startingAtAddress:status:)` decides whether the next address a
-/// caller is about to request still falls within an accessory's currently
-/// retained history range — see `HistoryCursor`'s doc comment for why a
-/// stale cursor must fall back to a full re-fetch rather than risk silently
-/// missing entries. It's a pure function of `startingAtAddress` and
-/// `status` (no HomeKit types), so it's directly testable without a live
-/// home.
+/// caller is about to request still falls within an accessory's retained
+/// history range — see `HistoryCursor`'s doc comment for why a stale
+/// cursor falls back to a full re-fetch rather than risking missed
+/// entries. It's a pure function, so it's directly testable without a
+/// live home.
 ///
-/// The valid (non-stale) range is `firstEntryAddress` through
-/// `firstEntryAddress + usedEntryCount + 1` inclusive — the `+ 1` upper
-/// bound is the "resume right after the newest entry, nothing new logged
-/// yet" case a fully caught-up accessory hits on every subsequent sync.
-/// Flagging that specific address as stale was a real regression: it
-/// forced a full ~4,000-entry re-download on every sync/launch where
-/// nothing new had happened, defeating the resume cursor's entire purpose.
+/// The valid range is `firstEntryAddress` through `firstEntryAddress +
+/// usedEntryCount + 1` inclusive. That `+ 1` upper bound covers "resumed
+/// right after the newest entry, nothing new logged yet" — a fully
+/// caught-up accessory hits this on every sync. Flagging that address as
+/// stale was a real regression: it forced a full ~4,000-entry re-download
+/// on every sync where nothing new had happened.
 struct HistoryCursorTests {
 
     private func status(firstEntryAddress: UInt32, usedEntryCount: Int) -> FakegatoHistoryDecoder.HistoryStatus {
@@ -44,9 +42,7 @@ struct HistoryCursorTests {
     }
 
     /// The regression case: resuming exactly one past the newest known
-    /// entry (`firstEntryAddress + usedEntryCount + 1`) means "nothing new
-    /// since last sync", not "stale". Getting this wrong is what forced a
-    /// full re-download on every fully-caught-up sync.
+    /// entry means "nothing new since last sync," not "stale."
     @Test func cursorOnePastNewestKnownAddressIsFresh() {
         let status = status(firstEntryAddress: 100, usedEntryCount: 50)
         #expect(!HistoryCursor.isStale(startingAtAddress: 151, status: status))
@@ -64,55 +60,45 @@ struct HistoryCursorTests {
         #expect(HistoryCursor.isStale(startingAtAddress: 102, status: status))
     }
 
-    /// A corrupted/crafted `firstEntryAddress`/`usedEntryCount` pair whose
-    /// "one past newest" upper bound would overflow `UInt32` must report
-    /// stale (forcing a safe full re-fetch) rather than trapping — this
-    /// also guards the log message that used to recompute this same sum
-    /// with a plain, trapping `+`.
+    /// A corrupted `firstEntryAddress`/`usedEntryCount` pair whose "one
+    /// past newest" sum would overflow `UInt32` must report stale rather
+    /// than trap.
     @Test func overflowingUpperBoundIsStale() {
         let status = status(firstEntryAddress: .max, usedEntryCount: 1)
         #expect(HistoryCursor.isStale(startingAtAddress: .max, status: status))
         #expect(HistoryCursor.retainedRangeUpperBound(status: status) == nil)
     }
 
-    /// A first-ever sync (no persisted cursor) requests address `1`. A
-    /// caller must run that through `isStale` like any other address —
-    /// there used to be a `startingAtAddress > 1` short-circuit that
-    /// skipped the check, so a first sync against a ring buffer that had
-    /// already wrapped streamed from physical slot `1 % memorySize` with
-    /// relabelled addresses. These pin down what `isStale` says about `1`
-    /// in each state so that short-circuit can't come back as a
-    /// "harmless" optimisation.
+    /// A first-ever sync (no persisted cursor) requests address `1`, which
+    /// must run through `isStale` like any other address — there used to
+    /// be a `startingAtAddress > 1` short-circuit that skipped the check,
+    /// so a first sync against an already-wrapped ring streamed from the
+    /// wrong physical slot with relabelled addresses. These pin down what
+    /// `isStale` says about `1` in each state so that short-circuit can't
+    /// come back.
     @Test func addressOneIsStaleOnAWrappedRingButFreshOnAnUnwrappedOne() {
-        // Wrapped: fakegato reports the oldest retained address (7498 here,
-        // from the real-device fixture) — `1` was evicted long ago.
+        // Wrapped: oldest retained address is 7498 (real-device fixture) — `1` was evicted long ago.
         let wrapped = status(firstEntryAddress: 7498, usedEntryCount: 4031)
         #expect(HistoryCursor.isStale(startingAtAddress: 1, status: wrapped))
 
-        // Not yet wrapped: fakegato reports `firstEntry == 0`, and records
-        // live at `1...usedEntryCount`, so `1` is exactly the oldest one.
+        // Not yet wrapped: records live at `1...usedEntryCount`, so `1` is the oldest one.
         let fresh = status(firstEntryAddress: 0, usedEntryCount: 50)
         #expect(!HistoryCursor.isStale(startingAtAddress: 1, status: fresh))
-        // ...and the caught-up resume address (one past newest) stays fresh.
+        // Caught-up resume address (one past newest) stays fresh too.
         #expect(!HistoryCursor.isStale(startingAtAddress: 51, status: fresh))
         #expect(HistoryCursor.isStale(startingAtAddress: 52, status: fresh))
     }
 
-    /// On an un-wrapped ring the fallback address is fakegato's raw
-    /// `firstEntry` field, `0` — which the protocol defines as "restart
-    /// from the beginning" (`sendHistory(0)` → entry `1`), so it's a valid
-    /// restart point, not a bug.
+    /// On an un-wrapped ring the fallback address is `0`, fakegato's raw
+    /// `firstEntry` field — a valid restart point, not a bug.
     @Test func staleCursorFallbackOnAnUnwrappedRingIsAddressZero() {
         let fresh = status(firstEntryAddress: 0, usedEntryCount: 50)
         #expect(HistoryCursor.staleCursorFallbackAddress(status: fresh) == 0)
     }
 
-    /// Once a cursor is flagged stale, a full re-fetch must restart from
-    /// the accessory's own `firstEntryAddress`, never a hardcoded `1` — on
-    /// a wrapped ring (like this real-device case: 4031 entries, oldest
-    /// retained at 7498), address `1` no longer exists, so re-requesting it
-    /// would relabel whatever slot the accessory streams first as address
-    /// `1` onward, corrupting every subsequent entry's address.
+    /// A stale cursor must restart from the accessory's own
+    /// `firstEntryAddress`, never a hardcoded `1` — on this wrapped ring,
+    /// address `1` no longer exists.
     @Test func staleCursorFallbackRestartsFromTheAccessorysFirstEntryAddressNotOne() {
         let status = status(firstEntryAddress: 7498, usedEntryCount: 4031)
         #expect(HistoryCursor.staleCursorFallbackAddress(status: status) == 7498)

@@ -3,11 +3,9 @@ import Foundation
 @testable import SwiftGatoHistoryKit
 
 /// Covers `FakegatoHistoryDecoder` against hand-built fixture bytes derived
-/// from `simont77/fakegato-history`'s own JavaScript source (see
-/// `FakegatoHistoryDecoder`'s doc comment) — an internal-consistency check
-/// that the decode logic matches what that reference implementation
-/// produces, not a substitute for validating against a real accessory's
-/// actual bytes.
+/// from `simont77/fakegato-history`'s JS source. An internal-consistency
+/// check that decoding matches that reference implementation, not a
+/// substitute for validating against a real accessory's bytes.
 struct FakegatoHistoryDecoderTests {
 
     // MARK: - encodeRequest
@@ -28,11 +26,9 @@ struct FakegatoHistoryDecoderTests {
     @Test func parseStatusDecodesReferenceTimeAndMemoryFields() {
         // Prefix (12 bytes): currentTimeDelta(4)=0, reserved(4)=0, refTime(4)=3600.
         var bytes: [UInt8] = [0, 0, 0, 0, 0, 0, 0, 0] + littleEndian(UInt32(3600))
-        // Signature: count=3 (the byte right after the prefix), so the
-        // signature itself is `1 + 2*3` = 7 bytes total — the decoder must
-        // parse this forward, not measure the suffix back from the end of
-        // the blob. Only the count value matters; the rest of the
-        // signature's bytes are arbitrary.
+        // Signature: count=3, so 7 bytes total (`1 + 2*3`) — decoder must
+        // parse forward, not measure back from the blob's end. Only the
+        // count matters; the rest of the bytes are arbitrary.
         bytes += [0x03, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]
         // Suffix (14 bytes): usedMemory+1=101 (LE16), memorySize=4096 (LE16), firstEntry=1 (LE32), reserved(6)=0.
         bytes += littleEndian(UInt16(101)) + littleEndian(UInt16(4096)) + littleEndian(UInt32(1)) + [0, 0, 0, 0, 0, 0]
@@ -45,15 +41,12 @@ struct FakegatoHistoryDecoderTests {
         #expect(status?.firstEntryAddress == 1)
     }
 
-    /// Exactly what fakegato-history's `_addEntry` emits for a fresh,
-    /// not-yet-wrapped Eve Weather emulation (`usedMemory < memorySize`
-    /// branch): the real 3-word Weather signature `03 0102 0202 0302`, a
-    /// "used" field of `usedMemory + 1`, and a "first entry" field of `0`
-    /// (not `1` — fakegato only reports the oldest address once the ring
-    /// has wrapped). The forward parse must land on the suffix correctly
-    /// for this smaller signature too, and the decoded pair must keep the
-    /// `firstEntryAddress + usedEntryCount == newest address` invariant
-    /// `HistoryCursor.retainedRangeUpperBound` depends on.
+    /// What fakegato-history's `_addEntry` emits for a fresh, not-yet-wrapped
+    /// Eve Weather emulation: the real 3-word Weather signature, a "used"
+    /// field of `usedMemory + 1`, and a "first entry" field of `0` (not
+    /// `1` — fakegato only reports the oldest address once wrapped). The
+    /// decoded pair must still satisfy `firstEntryAddress + usedEntryCount
+    /// == newest address`.
     @Test func parseStatusDecodesAFreshUnwrappedFakegatoWeatherStatus() {
         // Prefix (12 bytes): currentTimeDelta(4)=0, reserved(4)=0, refTime(4)=7200.
         var bytes: [UInt8] = [0, 0, 0, 0, 0, 0, 0, 0] + littleEndian(UInt32(7200))
@@ -72,9 +65,8 @@ struct FakegatoHistoryDecoderTests {
         #expect((status?.firstEntryAddress).map { Int($0) + (status?.usedEntryCount ?? -1) } == 50)
     }
 
-    /// A signature with no words at all (`count == 0`). fakegato never
-    /// emits this (every accessory type has ≥1 signature word), but the
-    /// forward parse must still not misplace the suffix for it.
+    /// A signature with no words (`count == 0`). fakegato never emits
+    /// this, but the forward parse must still not misplace the suffix.
     @Test func parseStatusHandlesAnEmptySignature() {
         var bytes: [UInt8] = [0, 0, 0, 0, 0, 0, 0, 0] + littleEndian(UInt32(7200))
         bytes += [0x00]
@@ -137,13 +129,11 @@ struct FakegatoHistoryDecoderTests {
         #expect(entry?.co2PPM == nil)
     }
 
-    /// Eve Room (2nd gen) / fakegato `room2`: type `0x7F`, 21 bytes total per
-    /// fakegato's `",15 %s%s%s%s%s%s0054 a80f01"` format — temperature ×100,
-    /// humidity ×100, VOC density (µg/m³, *not* CO₂ — so it must not be
-    /// surfaced as `co2PPM`), then reserved bytes `00 54 a8 0f 01`. Before
-    /// this type was recognised, every Room 2 batch decoded to zero
-    /// entries, so `drainEntries` stopped on the first read and a Room 2
-    /// never synced any history at all.
+    /// Eve Room (2nd gen) / fakegato `room2`: type `0x7F`, 21 bytes total —
+    /// temperature ×100, humidity ×100, VOC density (µg/m³, not CO₂, so
+    /// it mustn't surface as `co2PPM`), then reserved bytes. Before this
+    /// type was recognised, Room 2 batches decoded to zero entries and
+    /// never synced any history.
     @Test func parseEntriesDecodesARoom2EntryIgnoringVOC() {
         let payload = littleEndian(UInt16(2115)) + littleEndian(UInt16(4870)) + littleEndian(UInt16(312)) + [0x00, 0x54, 0xa8, 0x0f, 0x01]
         let bytes = entryBytes(counter: 9, secondsSinceReference: 1200, type: 0x7F, payload: payload)
@@ -174,8 +164,7 @@ struct FakegatoHistoryDecoderTests {
 
     @Test func parseEntriesReferenceTimeEntryReanchorsSubsequentTimestampsWithoutProducingAReading() {
         let newReferenceSeconds: UInt32 = 5000
-        // Type 0x81 payload: refTime LE32 + 7 reserved bytes (matches the
-        // real 21-byte total entry length).
+        // Type 0x81 payload: refTime LE32 + 7 reserved bytes.
         let referenceEntry = entryBytes(counter: 1, secondsSinceReference: 1, type: 0x81, payload: littleEndian(newReferenceSeconds) + [0, 0, 0, 0, 0, 0, 0])
         let roomPayload = littleEndian(UInt16(2000)) + littleEndian(UInt16(5000)) + littleEndian(UInt16(500)) + [0, 0, 0]
         let roomEntry = entryBytes(counter: 2, secondsSinceReference: 60, type: 0x0F, payload: roomPayload)
@@ -185,9 +174,8 @@ struct FakegatoHistoryDecoderTests {
         #expect(result.entries.count == 1) // The reference-time entry itself isn't a reading.
         #expect(result.referenceDate == Date(timeIntervalSinceReferenceDate: TimeInterval(newReferenceSeconds)))
         #expect(result.entries.first?.timestamp == Date(timeIntervalSinceReferenceDate: TimeInterval(newReferenceSeconds) + 60))
-        // The reference-time entry (counter 1) still occupies a ring-buffer
-        // address even though it produces no `HistoryEntry` — the resume
-        // cursor must advance past it too, not just past decoded readings.
+        // Reference-time entry (counter 1) still occupies an address, so
+        // the resume cursor must advance past it too.
         #expect(result.lastAddress == 2)
     }
 
@@ -197,17 +185,15 @@ struct FakegatoHistoryDecoderTests {
         let result = FakegatoHistoryDecoder.parseEntries(Data(doorEntry), referenceDate: .now)
 
         #expect(result.entries.isEmpty)
-        // Still occupies address 1 in the ring buffer, so the resume cursor
-        // must advance past it despite producing no decoded entry.
+        // Still occupies address 1, so the resume cursor advances past it.
         #expect(result.lastAddress == 1)
         #expect(result.recordCount == 1)
     }
 
-    /// A batch made up *entirely* of unsupported entry types still has
-    /// well-formed records — `recordCount` must reflect that even though
-    /// `entries` stays empty, so `FakegatoHistoryDrainer.drainEntries` can
-    /// tell this apart from a batch with nothing parseable at all (see
-    /// `parseEntriesReturnsEmptyForEmptyData`).
+    /// A batch of entirely unsupported entry types still has well-formed
+    /// records — `recordCount` must reflect that even though `entries`
+    /// stays empty, distinguishing it from a batch with nothing parseable
+    /// at all (see `parseEntriesReturnsEmptyForEmptyData`).
     @Test func parseEntriesReportsRecordCountForAnAllUnsupportedTypeBatch() {
         let doorEntry = entryBytes(counter: 5, secondsSinceReference: 0, type: 0x01, payload: [1])
         let motionEntry = entryBytes(counter: 6, secondsSinceReference: 60, type: 0x02, payload: [0])
@@ -218,9 +204,8 @@ struct FakegatoHistoryDecoderTests {
         #expect(result.lastAddress == 6)
     }
 
-    /// An Eve Room (`0x0F`) record whose declared `length` leaves fewer
-    /// than 6 payload bytes must be skipped, not misread past its own
-    /// bounds into whatever bytes happen to follow.
+    /// An Eve Room record with fewer than 6 payload bytes must be
+    /// skipped, not misread past its own bounds.
     @Test func parseEntriesSkipsATruncatedRoomPayloadRatherThanMisreadingIt() {
         let shortPayload: [UInt8] = [0x01, 0x02, 0x03] // Only 3 of the required 6 payload bytes.
         let truncatedRoomEntry = entryBytes(counter: 1, secondsSinceReference: 0, type: 0x0F, payload: shortPayload)
@@ -264,22 +249,17 @@ struct FakegatoHistoryDecoderTests {
     // MARK: - Real captured device data
 
     /// Bytes captured from a real accessory ("Left Flower Tent") via
-    /// `FakegatoHistoryDecoder`'s own debug logging — this is the
-    /// regression test that caught entry type `0x03`
-    /// (temperature+humidity-only, no PPM, 14-byte entries) not being
-    /// decoded at all: every entry in this real batch used that type, so
-    /// before it was added, `parseEntries` silently returned zero entries
-    /// for the whole batch.
+    /// `FakegatoHistoryDecoder`'s debug logging. This caught entry type
+    /// `0x03` (temperature+humidity-only, no PPM) not being decoded:
+    /// every entry in this batch used that type, so before it was added,
+    /// `parseEntries` silently returned zero entries for the whole batch.
     @Test func parseStatusAndEntriesDecodeARealCapturedDeviceResponse() throws {
-        // This accessory's ring buffer has wrapped: `firstEntryAddress`
-        // (7498) is past `memorySize` (4032), meaning the oldest entries
-        // have already been overwritten. Parsed forward from byte 12:
-        // signature is `02 | 0102 | 0202` (count=2, so 5 bytes total),
-        // landing the fixed 14-byte suffix at byte 17 — giving used+1=0x0fc0,
-        // memSize=0x0fc0 (4032, fakegato's default buffer size),
-        // firstEntry=0x1d4a (7498). Measuring the suffix back from the end
-        // of the blob instead misreads `memorySize` as 7498 and
-        // `firstEntryAddress` as 0.
+        // Ring buffer has wrapped: `firstEntryAddress` (7498) is past
+        // `memorySize` (4032). Parsed forward from byte 12, the signature
+        // is `02 | 0102 | 0202` (5 bytes), landing the suffix at byte 17 —
+        // giving used+1=0x0fc0, memSize=4032, firstEntry=7498. Measuring
+        // back from the blob's end instead misreads memorySize as 7498
+        // and firstEntryAddress as 0.
         let statusBytes = hexBytes("87 95 69 00 00 00 00 00 fd 91 f4 2f 02 01 02 02 02 c0 0f c0 0f 4a 1d 00 00 00 00 00 00 01 01")
         let status = try #require(FakegatoHistoryDecoder.parseStatus(Data(statusBytes)))
         #expect(status.usedEntryCount == 4031)

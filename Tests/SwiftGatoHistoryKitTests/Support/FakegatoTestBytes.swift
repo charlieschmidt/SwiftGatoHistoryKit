@@ -2,10 +2,7 @@ import Foundation
 
 /// Shared byte-fixture helpers for building raw Eve/fakegato-history
 /// Entries-characteristic records, used by both `FakegatoHistoryDecoderTests`
-/// (direct decoder coverage) and `FakegatoHistoryDrainerTests`
-/// (drain-loop coverage against scripted characteristic reads) so both
-/// suites build byte-for-byte identical fixtures from one place rather than
-/// maintaining duplicate byte-layout logic.
+/// and `FakegatoHistoryDrainerTests` so they don't duplicate byte-layout logic.
 enum FakegatoTestBytes {
 
     /// Builds one raw entry record:

@@ -1,5 +1,7 @@
 # SwiftGatoHistoryKit
 
+Major kudos, thanks, and "this wouldn't be possible" to https://github.com/simont77/fakegato-history
+
 A Swift implementation of the reverse-engineered Eve/Elgato "fakegato-history" characteristic protocol: TLV8 request encoding, Status/Entries decoding, and a drain loop that pages through a HomeKit accessory's on-device history buffer.
 
 This package never imports `HomeKit` — it talks to the outside world only through `Data` in/out and plain closures, so it works with any transport that can write a request characteristic and read back Status/Entries characteristics.
@@ -75,5 +77,9 @@ Everything that touches the characteristic transport (resolving, reading, writin
 ## Installation
 
 ```swift
-.package(url: "https://github.com/charlieschmidt/SwiftGatoHistoryKit", from: "0.1.0")
+.package(url: "https://github.com/charlieschmidt/SwiftGatoHistoryKit", from: "0.1.3")
 ```
+
+## References
+
+* https://github.com/simont77/fakegato-history

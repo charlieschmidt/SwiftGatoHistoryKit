@@ -1,7 +1,6 @@
 import Foundation
 
-/// One historical sample from an accessory's own on-device log, decoded
-/// from Eve/fakegato-history.
+/// One historical sample decoded from an accessory's Eve/fakegato-history log.
 public struct HistoryEntry: Codable, Hashable, Sendable {
     public let timestamp: Date
     public var temperatureCelsius: Double?
@@ -16,15 +15,14 @@ public struct HistoryEntry: Codable, Hashable, Sendable {
     }
 }
 
-/// Result of one history fetch — a consumer persists `lastSyncedAddress`
-/// as the accessory's resume cursor for the next sync.
+/// Result of one history fetch. Persist `lastSyncedAddress` as the
+/// accessory's resume cursor for the next sync.
 public struct HistoryFetchResult: Sendable {
     public let entries: [HistoryEntry]
-    /// Address of the newest entry this fetch actually saw (across every
-    /// record processed, not just ones that decoded into a `HistoryEntry`
-    /// — see `FakegatoHistoryDecoder.parseEntries(_:referenceDate:)`).
-    /// `nil` if nothing was fetched, in which case the caller should leave
-    /// any previously-stored cursor untouched rather than clearing it.
+    /// Newest address seen in this fetch, across every record processed —
+    /// not just the ones that decoded into a `HistoryEntry` (see
+    /// `FakegatoHistoryDecoder.parseEntries(_:referenceDate:)`). `nil` if
+    /// nothing was fetched; leave any stored cursor untouched in that case.
     public let lastSyncedAddress: UInt32?
 
     public init(entries: [HistoryEntry], lastSyncedAddress: UInt32?) {
@@ -33,37 +31,32 @@ public struct HistoryFetchResult: Sendable {
     }
 }
 
-/// Progress through a sync-orchestration pipeline (request → download →
-/// import) that spans potentially multiple accessories, so UI can show a
-/// spinner/progress bar plus a status line instead of looking hung —
-/// downloading years of history from a real accessory can take a while.
+/// Progress through a sync pipeline (request → download → import), possibly
+/// spanning multiple accessories, so UI can show a progress bar and status
+/// line instead of looking hung during a long history download.
 ///
-/// This type is shipped for a consumer's orchestration layer to use; the
-/// decoder/drainer in this package never produce it themselves — they
-/// report raw `(current, total)` ints, and it's the consumer's job to map
-/// those into phases like `.downloading`/`.importing` below.
+/// This type is for a consumer's orchestration layer. The decoder/drainer
+/// in this package only report raw `(current, total)` ints; mapping those
+/// into phases below is the consumer's job.
 public struct HistorySyncProgress: Equatable, Sendable {
     public enum Phase: Equatable, Sendable {
-        /// Requesting an accessory's history — indeterminate, covering the
-        /// brief window between writing the request and getting back its
-        /// Status characteristic (which is when the total entry count
-        /// becomes known and this moves to `.downloading`).
+        /// Requesting an accessory's history. Indeterminate — covers the
+        /// window before the Status characteristic reports a total count
+        /// and this moves to `.downloading`.
         case searching
         /// Streaming entries from the accessory. `total` is that
-        /// accessory's own reported entry count (everything it retains,
-        /// not just what's new) — `current == 0` reads naturally as "found
-        /// `total` entries, starting download."
+        /// accessory's own reported entry count (everything retained, not
+        /// just what's new).
         case downloading(current: Int, total: Int)
         /// Writing persisted rows for entries newer than what's already
         /// stored. `total` is the combined new-entry count across every
-        /// accessory being synced, so a multi-accessory sync shows one
-        /// continuous progress bar rather than restarting per accessory.
+        /// accessory in this sync, so progress doesn't restart per accessory.
         case importing(current: Int, total: Int)
     }
 
     public var phase: Phase
-    /// Display name of the accessory currently being fetched/imported, for
-    /// the status line — `nil` if no name could be resolved.
+    /// Name of the accessory currently being fetched/imported, for the
+    /// status line. `nil` if no name could be resolved.
     public var accessoryName: String?
 
     public init(phase: Phase, accessoryName: String? = nil) {
