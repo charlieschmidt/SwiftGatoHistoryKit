@@ -77,7 +77,7 @@ Everything that touches the characteristic transport (resolving, reading, writin
 ## Installation
 
 ```swift
-.package(url: "https://github.com/charlieschmidt/SwiftGatoHistoryKit", from: "0.1.3")
+.package(url: "https://github.com/charlieschmidt/SwiftGatoHistoryKit", from: "1.0.0")
 ```
 
 ## Dependencies
