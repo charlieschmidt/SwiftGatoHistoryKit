@@ -1,20 +1,18 @@
-# SwiftGatoHistoryKit
+# ``SwiftGatoHistoryKit``
 
 A Swift implementation of the reverse-engineered Eve/Elgato "fakegato-history" characteristic protocol: TLV8 request encoding, Status/Entries decoding, and a drain loop that pages through a HomeKit accessory's on-device history buffer.
 
+## Overview
+
 This package never imports `HomeKit` — it talks to the outside world only through `Data` in/out and plain closures, so it works with any transport that can write a request characteristic and read back Status/Entries characteristics.
 
-**[Full API documentation](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/)**
+- ``FakegatoHistoryDecoder`` encodes the History Request TLV8 payload, and decodes the Status and Entries characteristics.
+- ``FakegatoHistoryDrainer`` repeatedly reads the Entries characteristic until the accessory's reported entry count is reached, nothing new comes back, or a safety cap is hit.
+- ``HistoryCursor`` is pure staleness math for deciding whether a previously-persisted resume cursor still falls within an accessory's currently retained history range.
+- ``FakegatoCharacteristic`` holds the three Eve history characteristic UUIDs, as plain `String` constants.
+- ``HistoryEntry``, ``HistoryFetchResult``, and ``HistorySyncProgress`` are plain value types for a consumer's own sync orchestration.
 
-## What's included
-
-- [`FakegatoHistoryDecoder`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/fakegatohistorydecoder) — encodes the History Request TLV8 payload, and decodes the Status and Entries characteristics.
-- [`FakegatoHistoryDrainer`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/fakegatohistorydrainer) — repeatedly reads the Entries characteristic until the accessory's reported entry count is reached, nothing new comes back, or a safety cap is hit.
-- [`HistoryCursor`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/historycursor) — pure staleness math for deciding whether a previously-persisted resume cursor still falls within an accessory's currently retained history range.
-- [`FakegatoCharacteristic`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/fakegatocharacteristic) — the three Eve history characteristic UUIDs, as plain `String` constants.
-- [`HistoryEntry`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/historyentry), [`HistoryFetchResult`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/historyfetchresult), [`HistorySyncProgress`](https://charlieschmidt.github.io/SwiftGatoHistoryKit/documentation/swiftgatohistorykit/historysyncprogress) — plain value types for a consumer's own sync orchestration.
-
-## Usage
+### Usage
 
 Resolve the three characteristics by UUID, write the request, read status, then drain:
 
@@ -69,22 +67,20 @@ func fetchHistory(
 
 Everything that touches the characteristic transport (resolving, reading, writing) is the caller's job; everything that understands the TLV8 bytes and the paging/stop logic is this package's job, reached only through `Data` and closures.
 
-## Requirements
+## Topics
 
-- Swift 6.0+
-- iOS 17+ / macOS 14+
+### Decoding and draining history
 
-## Installation
+- ``FakegatoHistoryDecoder``
+- ``FakegatoHistoryDrainer``
+- ``HistoryCursor``
 
-```swift
-.package(url: "https://github.com/charlieschmidt/SwiftGatoHistoryKit", from: "0.1.3")
-```
+### Characteristic identifiers
 
-## Dependencies
+- ``FakegatoCharacteristic``
 
-* https://github.com/PureSwift/TLVCoding
+### Value types
 
-## References
-
-* https://github.com/simont77/fakegato-history
-
+- ``HistoryEntry``
+- ``HistoryFetchResult``
+- ``HistorySyncProgress``
