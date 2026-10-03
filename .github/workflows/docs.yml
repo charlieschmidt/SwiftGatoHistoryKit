@@ -29,7 +29,8 @@ jobs:
           xcodebuild docbuild \
             -scheme SwiftGatoHistoryKit \
             -derivedDataPath /tmp/docbuild \
-            -destination 'generic/platform=macOS'
+            -destination 'generic/platform=macOS' \
+            -skipMacroValidation
 
       - name: Transform for static hosting
         run: |
