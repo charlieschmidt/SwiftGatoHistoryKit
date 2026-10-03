@@ -19,7 +19,8 @@ let package = Package(
     targets: [
         .target(
             name: "SwiftGatoHistoryKit",
-            dependencies: ["TLVCoding"]
+            dependencies: ["TLVCoding"],
+            swiftSettings: [.enableUpcomingFeature("NonisolatedNonsendingByDefault")]
         ),
         .testTarget(
             name: "SwiftGatoHistoryKitTests",
